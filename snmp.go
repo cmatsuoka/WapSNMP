@@ -362,31 +362,50 @@ func (w WapSNMP) GetTable(oid Oid) (map[string]interface{}, error) {
 	return result, nil
 }
 
+type TrapData struct {
+	Version   int
+	Community string
+	Data      map[string]interface{}
+}
+
 // ParseTrap parses a received SNMP trap and returns  a map of oid to objects
-func (w WapSNMP) ParseTrap(response []byte) (interface{}, error) {
+func (w WapSNMP) ParseTrap(response []byte) (TrapData, error) {
+
+	t := TrapData{Data: map[string]interface{}{}}
+
 	decodedResponse, err := DecodeSequence(response)
 	if err != nil {
-		return 1, err
+		return t, err
 	}
-	var community string;
 
 	// Fetch the varbinds out of the packet.
-	snmpVer:= decodedResponse[1].(int)+1;
-	fmt.Printf("Version:%d\n",snmpVer);
-	if (snmpVer<3){
-		community = decodedResponse[2].(string);
-		fmt.Printf("Community:%s\n",community);
+	t.Version = int(decodedResponse[1].(int64)) + 1
+	if t.Version < 3 {
+		t.Community = decodedResponse[2].(string)
 	}
-	respPacket := decodedResponse[3].([]interface{})
-	varbinds := respPacket[4].([]interface{})
-	for i:=1;i<len(varbinds);i++ {
-		varoid:= varbinds[i].([]interface{})[1]
-		result := varbinds[i].([]interface{})[2]
-		fmt.Printf("%s = %s\n",varoid,result);
-	}
-	fmt.Printf("\n");
 
-	return 0, nil
+	switch decodedResponse[3].(type) {
+	case UnsupportedBerType:
+		r := []byte(decodedResponse[3].(UnsupportedBerType))
+		return t, fmt.Errorf("unsupported BER type %#02x", r[0])
+
+	case []interface{}:
+		respPacket := decodedResponse[3].([]interface{})
+		varbinds, ok := respPacket[4].([]interface{})
+		if !ok {
+			return t, fmt.Errorf("fail to parse varbinds")
+		}
+
+		for i := 1; i < len(varbinds); i++ {
+			v1 := varbinds[i].([]interface{})
+			varoid := v1[1].(Oid)
+			result := v1[2]
+			t.Data[varoid.String()] = result
+		}
+		return t, nil
+	}
+
+	return t, fmt.Errorf("fail to parse response packet")
 }
 
 // Close the net.conn in WapSNMP.

@@ -83,8 +83,11 @@ const (
 	AsnGetNextRequest BERType = 0xa1
 	AsnGetResponse    BERType = 0xa2
 	AsnSetRequest     BERType = 0xa3
+	AsnTrap           BERType = 0xa4
 	AsnGetBulkRequest BERType = 0xa5
+	AsnInform         BERType = 0xa6
 	AsnTrapV2         BERType = 0xa7
+	AsnReport         BERType = 0xa8
 
 	NoSuchInstance BERType = 0x81
 	EndOfMibView   BERType = 0x82
@@ -136,6 +139,9 @@ func EncodeLength(length uint64) []byte {
 func DecodeLength(toparse []byte) (uint64, int, error) {
 	// If the first bit is zero, the rest of the first byte indicates the length. Values up to 127 are encoded this way (unless you're using indefinite length, but we don't support that)
 
+	if len(toparse) == 0 {
+		return 0, 0, fmt.Errorf("nothing to parse")
+	}
 	if toparse[0] == 0x80 {
 		return 0, 0, fmt.Errorf("we don't support indefinite length encoding")
 	}
@@ -262,6 +268,7 @@ func DecodeSequence(toparse []byte) ([]interface{}, error) {
 
 	lidx := 0
 	idx := 1 + seqLenLen
+	toparse = toparse[:(1 + seqLenLen + int(seqLength))]
 	// Let's guarantee progress.
 	for idx < len(toparse) && idx > lidx {
 		berType := toparse[idx]
@@ -329,7 +336,7 @@ func DecodeSequence(toparse []byte) ([]interface{}, error) {
 				return nil, err
 			}
 			result = append(result, pdu)
-		case AsnGetNextRequest, AsnGetRequest, AsnGetResponse, AsnReport, AsnTrapV2:
+		case AsnGetNextRequest, AsnGetRequest, AsnGetResponse, AsnReport, AsnTrap, AsnTrapV2:
 			pdu, err := DecodeSequence(berAll)
 			if err != nil {
 				return nil, err
